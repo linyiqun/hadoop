@@ -61,10 +61,10 @@ average of request count per user. Every time that a sweep is performed, the cal
 ranked from highest to lowest. Each user is assigned a **priority** (0-3 by default, with 0 being highest priority)
 based on the proportion of calls originating from that user. The default **priority thresholds** are (0.125, 0.25, 0.5),
 meaning that users whose calls make up more than 50% of the total (there can be at most one such user) are placed into
-the lowest priority, users whose calls make up more than 25% of the total are in the 2nd lowest, users whose calls make
-up more than 12.5% are in the 2nd highest priority, and all other users are placed in the highest priority. At the end
-of the sweep, each known user has a cached priority which will be used until the next sweep; new users which appear
-between sweeps will have their priority calculated on-the-fly.
+the lowest priority, users whose calls make up between 25% and 50% of the total are in the 2nd lowest, users whose calls
+make up between 12.5% and 25% are in the 2nd highest priority, and all other users are placed in the highest priority.
+At the end of the sweep, each known user has a cached priority which will be used until the next sweep; new users which
+appear between sweeps will have their priority calculated on-the-fly.
 
 Within FairCallQueue, there are multiple **priority queues**, each of which is designated a **weight**. When a request
 arrives at the call queue, the request is placed into one of these priority queues based on the current priority
@@ -83,8 +83,13 @@ clients, reducing load, and can have substantial benefit. There is also a featur
 will cause requests in lower priority levels to back off if requests in higher priority levels are being serviced
 too slowly. For example, if the response time threshold for priority 1 is set to be 10 seconds, but the average
 response time in that queue is 12 seconds, an incoming request at priority levels 2 or lower would receive a backoff
-request, while requests at priority levels 0 and 1 would proceed as normal. The intent is to force heavier clients to
+exception, while requests at priority levels 0 and 1 would proceed as normal. The intent is to force heavier clients to
 back off when overall system load is heavy enough to cause high priority clients to be impacted.
+
+The discussion above refers to the **user** of a request when discussing how to group together requests for throttling.
+This is configurable via the **identity provider**, which defaults to the **UserIdentityProvider**. The user identity
+provider simply uses the username of the client submitting the request. However, a custom identity provider can be used
+to performing throttling based on other groupings, or using an external identity provider.
 
 Configuration
 -------------
@@ -108,7 +113,8 @@ omitted.
 | callqueue.impl | General | The fully qualified name of a class to use as the implementation of a call queue. Use `org.apache.hadoop.ipc.FairCallQueue` for the Fair Call Queue. | `java.util.concurrent.LinkedBlockingQueue` (FIFO queue) |
 | scheduler.impl | General | The fully qualified name of a class to use as the implementation of the scheduler. Use `org.apache.hadoop.ipc.DecayRpcScheduler` in conjunction with the Fair Call Queue. | `org.apache.hadoop.ipc.DefaultRpcScheduler` (no-op scheduler) <br/> If using FairCallQueue, defaults to `org.apache.hadoop.ipc.DecayRpcScheduler` |
 | scheduler.priority.levels | RpcScheduler, CallQueue | How many priority levels to use within the scheduler and call queue. | 4 |
-| faircallqueue.multiplexer.weights | FairCallQueue | How much weight to give to each priority queue. This should be a comma-separated list of length equal to the number of priority levels. | Weights descend by a factor of 2 (e.g., for 4 levels: `8,4,2,1`) |
+| faircallqueue.multiplexer.weights | WeightedRoundRobinMultiplexer | How much weight to give to each priority queue. This should be a comma-separated list of length equal to the number of priority levels. | Weights descend by a factor of 2 (e.g., for 4 levels: `8,4,2,1`) |
+| identity-provider.impl | DecayRpcScheduler | The identity provider mapping user requests to their identity. | org.apache.hadoop.ipc.UserIdentityProvider |
 | decay-scheduler.period-ms | DecayRpcScheduler | How frequently the decay factor should be applied to the operation counts of users. Higher values have less overhead, but respond less quickly to changes in client behavior. | 5000 |
 | decay-scheduler.decay-factor | DecayRpcScheduler | When decaying the operation counts of users, the multiplicative decay factor to apply. Higher values will weight older operations more strongly, essentially giving the scheduler a longer memory, and penalizing heavy clients for a longer period of time. | 0.5 |
 | decay-scheduler.thresholds | DecayRpcScheduler | The client load threshold, as an integer percentage, for each priority queue. Clients producing less load, as a percent of total operations, than specified at position _i_ will be given priority _i_. This should be a comma-separated list of length equal to the number of priority levels minus 1 (the last is implicitly 100). | Thresholds ascend by a factor of 2 (e.g., for 4 levels: `13,25,50`) |
